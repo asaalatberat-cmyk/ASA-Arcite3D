@@ -1,0 +1,89 @@
+name: Build ASA-Arsite3D (APK Android + Windows)
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    name: APK Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ekstrak sumber.zip
+        run: unzip -q -o sumber.zip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Unduh pustaka offline (PDF & font)
+        run: bash scripts/fetch-libs.sh
+      - name: Salin aplikasi web ke APK
+        run: |
+          rm -rf android/app/src/main/assets/www
+          mkdir -p android/app/src/main/assets
+          cp -r www android/app/src/main/assets/www
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build APK
+        working-directory: android
+        run: gradle assembleRelease bundleRelease --no-daemon --stacktrace
+      - name: Rapikan nama file
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/app-release.apk out/ASA-Arsite3D.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab out/ASA-Arsite3D-PlayStore.aab
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ASA-Arsite3D-Android
+          path: out/*
+      - name: Rilis (hanya saat tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+
+  windows:
+    name: Aplikasi Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ekstrak sumber.zip
+        run: 7z x sumber.zip -y
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Unduh pustaka offline (PDF & font)
+        shell: bash
+        run: bash scripts/fetch-libs.sh
+      - name: Salin aplikasi web
+        shell: bash
+        run: |
+          rm -rf windows/www
+          cp -r www windows/www
+      - name: Build installer & portable
+        working-directory: windows
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm install --no-audit --no-fund
+          npm run dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ASA-Arsite3D-Windows
+          path: windows/dist/*.exe
+      - name: Rilis (hanya saat tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: windows/dist/*.exe
